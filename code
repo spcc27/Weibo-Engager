@@ -1,0 +1,80 @@
+import weibopy as wb
+import time
+import random
+import requests
+from bs4 import BeautifulSoup
+
+# 认证部分
+# 1. 在 https://open.weibo.com 注册应用，获取 client_id 和 client_secret
+# 2. 设置 redirect_uri，例如 'https://example.com/callback'
+client_id = 'your_client_id'  # 替换为实际的 client_id
+client_secret = 'your_client_secret'  # 替换为实际的 client_secret
+redirect_uri = 'your_redirect_uri'  # 替换为实际的 redirect_uri
+
+# 授权以获取 access_token
+# 这将在浏览器中打开一个页面供您授权
+oauth = wb.OAuthHandler(client_id, client_secret, redirect_uri)
+oauth = oauth.authorize()
+
+# 创建 API 对象
+api = wb.API(oauth)
+
+# 目标用户 ID（需要替换为实际的用户 ID）
+target_user_ids = ['target_uid1', 'target_uid2']  # 替换为实际的用户 ID
+
+# 动作概率
+like_prob = 0.3  # 点赞概率
+comment_prob = 0.3  # 评论概率
+repost_prob = 0.3  # 转发概率
+
+def get_hot_keywords():
+    url = 'https://s.weibo.com/top/summary?Refer=top_hot&topnav=1&wvr=6'
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    # 假设热搜关键词在 <a> 标签中，class 为 'S_txt1'（需要根据实际 HTML 调整）
+    keywords = [a.get_text() for a in soup.find_all('a', class_='S_txt1')]
+    return keywords
+
+# 主逻辑
+for uid in target_user_ids:
+    # 获取目标用户的最新 10 条微博
+    posts, status = api.statuses.user_timeline(uid=uid, count=10)
+    if status == 200:
+        for post in posts:
+            post_id = post['id']
+            # 随机选择一个动作（点赞、评论、转发或无操作）
+            action = random.choices(
+                ['like', 'comment', 'repost', 'none'],
+                weights=[like_prob, comment_prob, repost_prob, 1 - (like_prob + comment_prob + repost_prob)]
+            )[0]
+            
+            if action == 'like':
+                try:
+                    api.favorites.create(id=post_id)
+                    print(f"Liked post {post_id}")
+                except Exception as e:
+                    print(f"Failed to like post {post_id}: {e}")
+            elif action == 'comment':
+                keywords = get_hot_keywords()
+                if keywords:
+                    keyword = random.choice(keywords)
+                    comment_text = f"Interesting! Also, {keyword} is trending."
+                    try:
+                        api.comments.create(id=post_id, comment=comment_text)
+                        print(f"Commented on post {post_id} with: {comment_text}")
+                    except Exception as e:
+                        print(f"Failed to comment on post {post_id}: {e}")
+            elif action == 'repost':
+                keywords = get_hot_keywords()
+                if keywords:
+                    keyword = random.choice(keywords)
+                    repost_text = f"Reposting: {post['text'][:50]}... Check out {keyword}"
+                    try:
+                        api.statuses.repost(id=post_id, status=repost_text)
+                        print(f"Reposted post {post_id} with: {repost_text}")
+                    except Exception as e:
+                        print(f"Failed to repost post {post_id}: {e}")
+            # 随机延迟 50-100 秒
+            time.sleep(random.uniform(50, 100))
+    else:
+        print(f"Failed to get timeline for user {uid}")
